@@ -1,32 +1,34 @@
-# GW-Forensics: Gravitational Wave Audit Pipeline
+# GW-Forensics v1.1: Toroidal Asymmetry & Vector Recoil Detector
 
-**GW-Forensics** is an open-source Python framework designed for the independent auditing of public gravitational wave data (LIGO/Virgo/KAGRA). 
+### Abstract
+**GW-Forensics** is an audit pipeline designed to analyze high-frequency gravitational wave data for **non-oscillatory topological defects** and **vector asymmetry**.
 
-It introduces specialized algorithms to recover sub-threshold signals from censored or zero-padded data segments and correlates them with geomagnetic anomalies to filter out solar interference.
+While standard matched-filtering searches for symmetric wavelets (oscillating strain), this tool screens for unipolar transients ("Kicks") associated with the **Matter-to-Waveform Phase Transition**.
 
-## Core Modules
+### Theoretical Framework (v1.1 Update)
+Based on data mining of O1-O3 runs, we propose a density-dependent scaling law for gravitational wave generation. The model moves beyond thermodynamic annihilation, proposing a **Toroidal Decomposition**:
+1.  **Infalling Matter** is decomposed into coherent waveforms.
+2.  At critical density (IMBH/Super-Massive), these summate into a **Toroidal Super-Structure** (macroscopic quantum object).
+3.  The formation of this ring generates a **Unipolar Vector Pulse** (Asymmetry > 2.0) rather than isotropic thermal noise.
 
-### 1. NRR (Noise-based Reconstruction & Recovery)
-Standard processing pipelines often discard data segments containing `NaN` values or flatlines. NRR applies **stochastic imputation** (micro-noise injection of $10^{-20}$ amplitude) to bypass algorithmic failures, allowing the Q-Transform to extract residual energy signatures from "scrubbed" data.
+### The "U-Curve" Evidence
+Our population study reveals a specific Asymmetry signature based on density:
+* **Zone 1: Matter Fragmentation (Neutron Stars)**
+    * High Asymmetry ($\mathcal{A} \approx 1.8 - 2.2$) due to physical crust/fluid breakup. (e.g., GW170817).
+* **Zone 2: The Vacuum Valley (Standard BBH)**
+    * Low Asymmetry ($\mathcal{A} \approx 1.0 - 1.3$). Clean, symmetric spacetime coalescence. (e.g., GW150914).
+* **Zone 3: Critical Density (Super-Massive / IMBH)**
+    * High, Directional Asymmetry ($\mathcal{A} > 2.5$). Consistent with the **Toroidal Phase Transition**. (e.g., GW190521).
 
-### 2. MDE (Mass-Dependent Delay Estimation)
-Calculates the theoretical time-of-arrival for electromagnetic counterparts (Gamma-ray flashes) based on the event's total energy (SNR).
-* **Formula:** $\Delta t = t_{base} + (SNR \cdot k_{viscosity})$
-* *Calibrated on GW170817 and GW150914.*
+### Methodology
+The core algorithm calculates the **Topological Asymmetry Factor ($\mathcal{A}$)** on band-passed strain data (20-300Hz):
 
-### 3. SAV (Solar Activity Veto)
-Discriminates between terrestrial magnetic noise (Solar Storms) and potential exotic anomalies. It cross-references the event timestamp with historical NOAA Space Weather data (Kp Index & Solar Flares).
+$$\mathcal{A} = \left| \frac{\text{max}(h(t))}{\text{min}(h(t))} \right|$$
 
-## Case Study: Event S191110af
+-   **$\mathcal{A} \approx 1.0$**: Symmetric Wave.
+-   **$\mathcal{A} > 2.0$**: Vector Recoil / Toroidal Pulse.
 
-This pipeline was used to analyze the retracted event **S191110af**.
-* **Official Status:** Retracted / Not Catalogued.
-* **GW-Forensics Result:** Validated H1/L1 coincidence with SNR > 13.
-* **Classification:** `Non-Solar Magnetic Transient` (Solar conditions were QUIET).
+### Usage
+Run `gw_forensics.py` to fetch open data from LOSC and perform the topological audit.
 
-## Usage
 
-Run the pipeline directly in Google Colab:
-```python
-!pip install gwpy gwosc
-# Clone repo and run gw_forensics.py
