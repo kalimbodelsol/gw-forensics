@@ -1,147 +1,97 @@
-# --- GW-FORENSICS: MULTI-MESSENGER AUDIT PIPELINE v1.0 ---
-# Description: Automated pipeline for sub-threshold gravitational wave recovery,
-#              mass-dependent delay estimation, and solar veto correlation.
-# Authors: Open Science Collaboration (2026)
-# License: MIT License
+# ==============================================================================
+# GW-FORENSICS: TOROIDAL PHASE & ASYMMETRY DETECTOR
+# Version: 1.1 (Density Ladder Release)
+# Hypothesis: Matter-to-Waveform Phase Transition (Toroidal Decomposition)
+# ==============================================================================
 
-!pip install -q gwpy pyopenssl cryptography astropy pandas gwosc
+import sys
+try:
+    import gwpy
+except ImportError:
+    print("Error: 'gwpy' not found. Install via: pip install gwpy")
+    sys.exit()
 
-import numpy as np
-import pandas as pd
 from gwpy.timeseries import TimeSeries
-from gwpy.time import tconvert
-from gwosc.datasets import find_datasets
+import numpy as np
 
-# --- 1. PHYSICS CONSTANTS & CONFIGURATION ---
-DETECTOR_H1 = 'H1' # LIGO Hanford
-DETECTOR_L1 = 'L1' # LIGO Livingston
+# --- CONFIGURATION: THE DENSITY LADDER ---
+# Events sorted by mass/density to demonstrate the "U-Curve" scaling law.
+TARGETS = [
+    # ZONE 1: MATTER FRAGMENTATION (Neutron Stars & Hybrids)
+    {'name': 'GW170817', 'gps': 1187008882.4, 'type': '1. BNS (Matter Breakup)'},
+    {'name': 'GW200115', 'gps': 1263090623.6, 'type': '1. NSBH (Vortex Clash)'},
+    
+    # ZONE 2: VACUUM VALLEY (Standard Black Holes)
+    {'name': 'GW150914', 'gps': 1126259462.4, 'type': '2. BBH (Symmetric Vacuum)'},
+    {'name': 'GW151226', 'gps': 1135136350.6, 'type': '2. BBH (Symmetric Vacuum)'},
 
-# MDE CONSTANTS (Mass-Dependent Delay Estimation)
-# Derived from calibration on GW170817 and GW150914
-BASE_LAG_SECONDS = 0.4
-VISCOSITY_COEFF = 0.0055 
-
-# SIMULATED AUXILIARY CHANNELS (For Geomagnetic Correlation)
-MAG_CHANNEL_ID = "H1:PEM-CS_MAG_EBAY_SUS_RACK_X_DQ"
-
-# HISTORICAL SOLAR WEATHER DATABASE (NOAA PROXY)
-# Used for the Solar Activity Veto (SAV) module
-solar_weather_db = {
-    '2019-11-10': {'status': 'QUIET', 'kp_index': 1},  # S191110af
-    '2019-05-21': {'status': 'QUIET', 'kp_index': 2},  # GW190521
-    '2017-09-06': {'status': 'STORM', 'kp_index': 8},  # Calibration Flare X9.3
-}
-
-# TARGET LIST (GPS EPOCH TIMES)
-targets = [
-    {'id': 'S191110af',       'gps': 1257416400.0, 'type': 'Uncatalogued Candidate'},
-    {'id': 'GW190521',        'gps': 1242442967.4, 'type': 'Confirmed Merger'},
-    {'id': 'Solar_Calib_X93', 'gps': 1188729600.0, 'type': 'Solar False Alarm'} 
+    # ZONE 3: CRITICAL DENSITY (Super-Massive / Toroidal Phase)
+    {'name': 'GW190521', 'gps': 1242442967.4, 'type': '3. IMBH (Toroidal Vector)'},
+    {'name': 'GW190412', 'gps': 1239082262.2, 'type': '3. BBH (Recoil/Kick)'}
 ]
 
-print("--- INITIALIZING GW-FORENSICS PIPELINE ---")
-print(f"Calibration: Lag = {BASE_LAG_SECONDS}s + (Energy * {VISCOSITY_COEFF})")
-print("="*100)
-
-def solar_activity_veto(gps_time):
+def analyze_topology(series):
     """
-    Module: SAV (Solar Activity Veto)
-    Checks historical space weather data to exclude solar interference.
+    Calculates the Topological Asymmetry Factor (A).
+    A > 2.0 indicates a Unipolar Transient (Vector Pulse).
     """
-    date_str = str(tconvert(gps_time)).split(' ')[0]
-    condition = solar_weather_db.get(date_str, {'status': 'UNKNOWN', 'kp_index': 0})
-    return condition, date_str
-
-def reconstruct_signal(data_series):
-    """
-    Module: NRR (Noise-based Reconstruction & Recovery)
-    Handles NaN/Zero-padded data segments via low-amplitude noise injection
-    to bypass algorithmic failures on censored/corrupted data.
-    """
-    # Check for "Flatline" or NaN anomalies
-    if np.isnan(data_series.value).any() or not np.any(data_series.value):
-        # Imputation: Fill NaNs with 0.0
-        data_series.value[:] = np.nan_to_num(data_series.value, nan=0.0)
-        # Injection: Add microscopic white noise (1e-20) to enable Q-Transform processing
-        white_noise = np.random.normal(0, 1e-20, len(data_series))
-        data_series.value[:] += white_noise
-        return True # Reconstruction Active
-    return False
-
-def analyze_event(target):
-    name = target['id']
-    gps = target['gps']
-    print(f"\n>> PROCESSING EVENT: {name}")
-    
-    # 1. SOLAR VETO CHECK
-    solar_cond, date_human = solar_activity_veto(gps)
-    print(f"   [SAV] Date: {date_human} | Solar Status: {solar_cond['status']}")
-    
-    # 2. GRAVITATIONAL DATA ACQUISITION & RECONSTRUCTION
     try:
-        # Fetching strain data (Public Loophole)
-        data = TimeSeries.fetch_open_data(DETECTOR_H1, gps-4, gps+4, verbose=False, pad=0)
+        val = series.value
+        # Filter extreme electronic glitches (>8 sigma)
+        val = val[np.abs(val) < 8 * np.std(val)]
         
-        # Apply NRR (formerly Lazarus)
-        reconstruction_flag = reconstruct_signal(data)
-            
-        # Spectrogram Analysis (Q-Transform)
-        q_trans = data.q_transform(outseg=(gps-0.5, gps+1.5), frange=(20, 500))
-        gw_snr = q_trans.max().value
+        max_v = np.max(val)
+        min_v = np.min(val)
         
-        # Exact Timing Extraction
-        peak_idx = np.argmax(q_trans.value)
-        t_idx = np.unravel_index(peak_idx, q_trans.shape)[0]
-        peak_time_gps = q_trans.xindex[t_idx].value
+        if abs(min_v) == 0: min_v = 1e-15
+        
+        # Calculate Asymmetry Ratio
+        ratio = abs(max_v / min_v)
+        
+        # Normalize (always >= 1.0)
+        if ratio < 1.0: ratio = 1.0 / ratio
+        
+        return ratio
+    except:
+        return -1.0
 
-    except Exception as e:
-        gw_snr = 0.0
-        peak_time_gps = gps
-        reconstruction_flag = False
+def run_audit():
+    print(f"{'EVENT':<15} | {'TYPE':<28} | {'H1':<5} | {'L1':<5} | {'V1':<5} | {'VERDICT'}")
+    print("-" * 85)
 
-    # 3. MAGNETIC CORRELATION (SIMULATED FOR DEMO)
-    # Logic: High Mag + Solar Quiet = Dark Matter Candidate
-    mag_snr = 0.5
-    if "Solar_Calib" in name: mag_snr = 45.0   # Simulated Geomagnetic Storm
-    if "S191110af" in name:   mag_snr = 15.8   # Simulated Anomaly
+    for evt in TARGETS:
+        gps = evt['gps']
+        name = evt['name']
+        etype = evt['type']
+        
+        scores = {'H1': -1.0, 'L1': -1.0, 'V1': -1.0}
+        
+        for det in ['H1', 'L1', 'V1']:
+            try:
+                # Fetch 1s around merger, Bandpass 20-300Hz (Astrophysical Range)
+                data = TimeSeries.fetch_open_data(det, gps-0.5, gps+0.5, verbose=False)
+                data = data.bandpass(20, 300)
+                scores[det] = analyze_topology(data)
+            except:
+                pass # Detector offline
+
+        # Format Scores
+        s_h1 = f"{scores['H1']:.2f}" if scores['H1'] != -1 else "-"
+        s_l1 = f"{scores['L1']:.2f}" if scores['L1'] != -1 else "-"
+        s_v1 = f"{scores['V1']:.2f}" if scores['V1'] != -1 else "-"
+        
+        # Classification Logic
+        kicks = sum(1 for s in scores.values() if s > 2.0)
+        valid = sum(1 for s in scores.values() if s != -1)
+        
+        verdict = "SYMMETRIC"
+        if kicks >= 1: verdict = "VECTOR PULSE" 
+        if kicks > 1 and valid > 1: verdict = "GLOBAL SHOCK"
+        if "Vacuum" in etype and kicks == 0: verdict = "CLEAN WAVE" # Confirmation for Zone 2
+
+        print(f"{name:<15} | {etype:<28} | {s_h1:<5} | {s_l1:<5} | {s_v1:<5} | {verdict}")
+
+if __name__ == "__main__":
+    print("--- GW-FORENSICS v1.1: STARTING AUDIT ---")
+    run_audit()
     
-    # 4. CLASSIFICATION LOGIC
-    classification = "INCONCLUSIVE"
-    
-    # Solar Interference Filter
-    if solar_cond['status'] in ['STORM', 'ACTIVE'] and mag_snr > 10:
-        classification = "REJECTED (Solar Interference)"
-        
-    # Dark Matter / Exotic Candidate
-    elif solar_cond['status'] == 'QUIET' and mag_snr > 10:
-        classification = "ANOMALY: Non-Solar Magnetic Transient"
-        
-    # Standard or Censored GW Event
-    elif gw_snr > 10:
-        classification = "VALID GW EVENT"
-        if reconstruction_flag:
-            classification += " (Recovered via NRR)"
-
-    # 5. MASS-DEPENDENT DELAY ESTIMATION (MDE)
-    # Predicting the Electromagnetic Counterpart Arrival Time
-    predicted_delay = BASE_LAG_SECONDS + (gw_snr * VISCOSITY_COEFF)
-    flash_time_utc = tconvert(peak_time_gps + predicted_delay)
-
-    return {
-        'Event ID': name,
-        'GW SNR': f"{gw_snr:.1f}",
-        'Mag SNR': f"{mag_snr:.1f}",
-        'Solar Cond': solar_cond['status'],
-        'Status': classification,
-        'Est. EM Flash (UTC)': flash_time_utc
-    }
-
-# --- EXECUTION ---
-results = [analyze_event(t) for t in targets]
-
-print("\n" + "="*110)
-print("GW-FORENSICS: FINAL AUDIT REPORT")
-print("="*110)
-df = pd.DataFrame(results)
-print(df[['Event ID', 'GW SNR', 'Mag SNR', 'Solar Cond', 'Status', 'Est. EM Flash (UTC)']].to_string(index=False))
-print("="*110)
