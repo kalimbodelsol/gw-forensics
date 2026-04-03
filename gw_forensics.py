@@ -3,7 +3,7 @@
 # Version: 1.1 (Density Ladder Release)
 # Hypothesis: Matter-to-Waveform Phase Transition (Toroidal Decomposition)
 # ==============================================================================
-
+!pip install gwpy
 import sys
 try:
     import gwpy
